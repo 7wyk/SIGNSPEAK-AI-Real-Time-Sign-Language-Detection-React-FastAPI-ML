@@ -3,7 +3,10 @@ __pycache__/
 *.pyc
 venv/
 myenv/
+backend/venv/
 .env
+backend/.env
+*.task
 
 # Node / React
 node_modules/
@@ -18,3 +21,8 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Python virtual environments
+venv/
+myenv/
+
