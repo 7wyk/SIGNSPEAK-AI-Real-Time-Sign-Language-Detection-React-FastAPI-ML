@@ -69,6 +69,102 @@ OpenCV + MediaPipe + Scikit-learn
 Prediction → React UI → Web Speech API
 ```
 
+### High-Level Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     REACT FRONTEND                           │
+│  (Vite + React 18 + Tailwind CSS + Framer Motion)           │
+│                                                              │
+│  ┌─────────┐  ┌──────────┐  ┌───────────┐  ┌────────────┐  │
+│  │ Landing │  │  Login /  │  │ Detection │  │  Feedback   │  │
+│  │  Page   │  │ Register │  │   Page    │  │    Page     │  │
+│  └─────────┘  └──────────┘  └───────────┘  └────────────┘  │
+│       │             │             │               │          │
+│       └─────────────┴──────┬──────┴───────────────┘          │
+│                            │                                 │
+│                    Axios HTTP Client                         │
+│                   (Bearer JWT Auth)                          │
+└────────────────────────────┬─────────────────────────────────┘
+                             │ REST API (JSON + MJPEG)
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    FASTAPI BACKEND                            │
+│              (Uvicorn ASGI Server, Port 8000)                │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                    ROUTES LAYER                       │   │
+│  │  /register  /login  /start_detection  /stop_detection│   │
+│  │  /video_feed  /get_prediction  /translate  /feedback  │   │
+│  └──────────────────────┬───────────────────────────────┘   │
+│                         │                                    │
+│  ┌──────────────────────▼───────────────────────────────┐   │
+│  │                  SERVICES LAYER                       │   │
+│  │  UserService  DetectionService  TranslationService    │   │
+│  │                FeedbackService                        │   │
+│  └──────────────────────┬───────────────────────────────┘   │
+│                         │                                    │
+│  ┌──────────────────────▼───────────────────────────────┐   │
+│  │                   ML PIPELINE                         │   │
+│  │  OpenCV → MediaPipe HandLandmarker → Feature Vector  │   │
+│  │  → scikit-learn RandomForest → Stable Prediction      │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐  │
+│  │ JWT Auth    │  │ CORS Middle- │  │ Pydantic Schemas   │  │
+│  │ (PyJWT+     │  │ ware         │  │ (Request/Response   │  │
+│  │  bcrypt)    │  │              │  │  Validation)        │  │
+│  └─────────────┘  └──────────────┘  └────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                      DATA LAYER                              │
+│   users.json    feedback.json    body_language.pkl            │
+│   (User DB)     (Feedback DB)   (Trained ML Model)           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow — Detection Pipeline
+
+```
+1. User clicks "Start Detection"
+       │
+2. POST /start_detection (JWT required)
+       │
+3. Backend opens webcam via OpenCV (640×480, ~30 FPS)
+       │
+4. Frontend <img src="/video_feed"> starts MJPEG stream
+       │
+5. For each frame:
+   ┌──────────────────────────────────────────────────┐
+   │  OpenCV captures BGR frame                        │
+   │       ↓                                           │
+   │  Convert BGR → RGB                                │
+   │       ↓                                           │
+   │  MediaPipe HandLandmarker detects hands           │
+   │       ↓                                           │
+   │  Extract 21 landmarks × 4 values × 2 hands       │
+   │  = 168-dimensional feature vector                 │
+   │       ↓                                           │
+   │  scikit-learn RandomForest predicts sign label    │
+   │       ↓                                           │
+   │  Stability check: 5 consecutive same predictions  │
+   │       ↓                                           │
+   │  If stable → update current_prediction            │
+   │       ↓                                           │
+   │  Draw landmarks + label on frame                  │
+   │       ↓                                           │
+   │  Encode as JPEG → yield as MJPEG frame            │
+   └──────────────────────────────────────────────────┘
+       │
+6. Frontend polls GET /get_prediction every 100ms
+       │
+7. Prediction displayed in React UI
+       │
+8. Web Speech API speaks the prediction aloud
+       │
+9. User can translate via POST /translate (googletrans)
 ---
 
 ## 🛠️ Technology Stack
